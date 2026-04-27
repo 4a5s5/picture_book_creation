@@ -1,5 +1,7 @@
 # Independent Picture Book Generation Skill
 
+[中文文档](README.zh-CN.md)
+
 Standalone OpenClaw/Codex skill for generating children-picture-book image workflows from a user topic. It includes text prompt generation, outline parsing, story packaging text, cover-first image generation, task state persistence, timeout control, directory scanning, and missing-page continuation.
 
 This skill does not depend on RedInk application code.
@@ -269,4 +271,3 @@ python scripts/image_workflow_cli.py task-state --task-id <task_id> --config .\w
 ```
 
 Then continue missing pages with `--only-missing`.
-
