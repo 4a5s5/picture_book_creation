@@ -4,7 +4,7 @@
 
 Standalone OpenClaw/Codex skill for generating children-picture-book image workflows from a user topic. It includes text prompt generation, outline parsing, story packaging text, cover-first image generation, task state persistence, timeout control, directory scanning, and missing-page continuation.
 
-This skill does not depend on RedInk application code.
+
 
 ## What It Does
 
@@ -50,15 +50,6 @@ independent-image-generation/
     └── image_workflow_cli.py
 ```
 
-Do not upload local runtime files:
-
-- `workflow_config.yaml`
-- `tasks/`
-- `.codex_*.json`
-- `.codex_*.yaml`
-- `.retry_pages_*/`
-
-These are ignored by `.gitignore`.
 
 ## Install With OpenClaw
 
