@@ -1,0 +1,81 @@
+output_root: ../tasks
+
+text_generation:
+  active_provider: demo_text
+  providers:
+    demo_text:
+      type: mock_text
+      api_key: demo-key
+      model: mock-text-model
+      temperature: 1.0
+      max_output_tokens: 4000
+
+    google_text:
+      type: google_gemini
+      api_key: YOUR_GOOGLE_API_KEY
+      model: gemini-2.0-flash
+      temperature: 1.0
+      max_output_tokens: 8000
+
+    openai_text:
+      type: openai_compatible
+      api_key: YOUR_OPENAI_API_KEY
+      base_url: https://api.openai.com/v1
+      endpoint_type: /v1/chat/completions
+      model: gpt-4o-mini
+      temperature: 1.0
+      max_output_tokens: 8000
+
+image_generation:
+  active_provider: demo_image
+  providers:
+    demo_image:
+      type: mock
+      api_key: demo-key
+      model: mock-image-model
+      short_prompt: false
+      high_concurrency: false
+      max_workers: 1
+      page_timeout_seconds: 120
+      scan_interval_seconds: 60
+      default_aspect_ratio: "3:4"
+      default_size: "1024x1024"
+      quality: standard
+
+    google_image:
+      type: google_genai
+      api_key: YOUR_GOOGLE_API_KEY
+      model: gemini-2.0-flash-exp-image-generation
+      short_prompt: false
+      high_concurrency: false
+      max_workers: 1
+      page_timeout_seconds: 120
+      scan_interval_seconds: 60
+      default_aspect_ratio: "3:4"
+
+    openai_image:
+      type: openai_compatible
+      api_key: YOUR_OPENAI_API_KEY
+      base_url: https://api.openai.com/v1
+      model: gpt-image-1
+      short_prompt: false
+      high_concurrency: false
+      max_workers: 1
+      page_timeout_seconds: 120
+      scan_interval_seconds: 60
+      default_size: "1024x1536"
+      quality: high
+
+    custom_image_api:
+      type: image_api
+      api_key: YOUR_API_KEY
+      base_url: https://your-api.example.com
+      endpoint_type: /v1/images/generations
+      model: custom-image-model
+      short_prompt: false
+      high_concurrency: false
+      max_workers: 1
+      page_timeout_seconds: 120
+      scan_interval_seconds: 60
+      default_aspect_ratio: "3:4"
+      image_size: 4K

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Independent Picture Book Generation"
+  short_description: "Run standalone children-picture-book image workflows."
+  default_prompt: "Use $independent-image-generation to run or modify a standalone children-picture-book workflow with outline, copy, images, timeout control, and missing-page continuation."

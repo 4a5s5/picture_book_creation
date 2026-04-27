@@ -1,0 +1,17 @@
+# Local config with real API keys
+workflow_config.yaml
+*.local.yaml
+
+# Generated task outputs
+tasks/
+references/tasks/
+
+# Local test payloads and scratch files
+.codex_*.json
+.codex_*.yaml
+.retry_pages_*/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
