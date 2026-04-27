@@ -4,7 +4,7 @@
 
 这是一个可独立安装到 OpenClaw/Codex 的儿童绘本生成 skill。它可以从用户输入的主题开始，完成绘本大纲生成、页面解析、标题和简介文案生成、封面优先生图、多页图片落盘、任务状态持久化、超时控制、目录扫描和缺页续跑。
 
-这个 skill 不依赖 RedInk 原应用代码。
+
 
 ## 能做什么
 
@@ -51,15 +51,7 @@ independent-image-generation/
     └── image_workflow_cli.py
 ```
 
-不要上传这些本地运行文件：
 
-- `workflow_config.yaml`
-- `tasks/`
-- `.codex_*.json`
-- `.codex_*.yaml`
-- `.retry_pages_*/`
-
-这些文件已经被 `.gitignore` 忽略。
 
 ## 使用 OpenClaw 安装
 
@@ -121,7 +113,6 @@ python scripts/image_workflow_cli.py init-config --output .\workflow_config.yaml
 
 然后编辑 `workflow_config.yaml`，填入你的文本模型和图片模型 key。
 
-不要把 `workflow_config.yaml` 提交到 GitHub。
 
 图片生成的重要配置：
 
