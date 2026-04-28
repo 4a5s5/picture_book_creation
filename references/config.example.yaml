@@ -1,6 +1,9 @@
 output_root: ../tasks
 task_lock_stale_seconds: 300
 allow_demo_providers: false
+# Parent watchdog is disabled by default in OpenClaw. Enable only by passing
+# --watch-parent or setting PICTURE_BOOK_WATCH_PARENT=1 for environments where
+# parent PID tracking is reliable.
 
 text_generation:
   active_provider: demo_text

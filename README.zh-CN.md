@@ -180,6 +180,8 @@ scan_interval_seconds: 60
 
 默认行为是串行逐页生成。
 
+父进程 watchdog 默认关闭，因为 OpenClaw 可能会重挂载或分离长时间运行的命令，导致父进程检测误杀任务。在 OpenClaw 中不要启用它。只有在普通 shell 且父 PID 检测可靠时，才使用 `--watch-parent` 或 `PICTURE_BOOK_WATCH_PARENT=1` 显式开启。
+
 ## 准备输入
 
 创建 `payload.json`：

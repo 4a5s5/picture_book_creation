@@ -23,6 +23,7 @@ Run [scripts/image_workflow_cli.py](./scripts/image_workflow_cli.py) to generate
 - Do not reuse an existing task directory unless the user explicitly asks to continue or inspect that task. New stories require a unique `task_id`.
 - If the CLI exits non-zero, stop and report the emitted JSON error or `task_error.json`. Do not fill missing content from old outputs, model memory, or hand-written fallback text.
 - If a task directory contains only `.task.lock` or no `task_state.json`, run `diagnose-task` and then `cleanup-lock` only when the lock pid is not alive, or when the user explicitly confirms `--force`.
+- Do not enable parent-process watchdog in OpenClaw. The CLI disables it by default because OpenClaw can re-parent long-running tasks; only use `--watch-parent` or `PICTURE_BOOK_WATCH_PARENT=1` outside OpenClaw when parent PID tracking is reliable.
 - Do not run this workflow with a short external process timeout. Use at least `page_count * page_timeout_seconds + 600` seconds, or leave the command running until the CLI emits `finish`.
 - If only some pages are missing, use `generate-images --only-missing` against that task's `task_state.json`; do not rerun the full task or regenerate completed images.
 

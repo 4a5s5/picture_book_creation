@@ -155,6 +155,8 @@ scan_interval_seconds: 60
 
 Default behavior is serial, one image at a time.
 
+Parent-process watchdog is disabled by default because OpenClaw can re-parent or detach long-running commands. Do not enable it in OpenClaw. For non-OpenClaw shells where parent PID tracking is reliable, opt in with `--watch-parent` or `PICTURE_BOOK_WATCH_PARENT=1`.
+
 ## Prepare Input
 
 Create `payload.json`:

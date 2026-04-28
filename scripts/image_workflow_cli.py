@@ -78,6 +78,13 @@ def start_parent_watchdog() -> None:
     thread.start()
 
 
+def parent_watchdog_enabled(args: argparse.Namespace) -> bool:
+    if getattr(args, "watch_parent", False):
+        return True
+    value = os.environ.get("PICTURE_BOOK_WATCH_PARENT", "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
 def json_print(data: Any, compact: bool = False) -> None:
     if compact:
         print(json.dumps(data, ensure_ascii=False), flush=True)
@@ -1666,6 +1673,11 @@ def command_cleanup_lock(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Standalone text and image workflow.")
+    parser.add_argument(
+        "--watch-parent",
+        action="store_true",
+        help="Exit when the parent process exits. Disabled by default because OpenClaw can re-parent long-running tasks.",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     init_config = subparsers.add_parser("init-config", help="Write an example config file.")
@@ -1769,9 +1781,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     install_shutdown_handlers()
-    start_parent_watchdog()
     parser = build_parser()
     args = parser.parse_args()
+    if parent_watchdog_enabled(args):
+        start_parent_watchdog()
     try:
         return args.func(args)
     except Exception as exc:
