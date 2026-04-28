@@ -20,10 +20,12 @@ Run [scripts/image_workflow_cli.py](./scripts/image_workflow_cli.py) to generate
 - Before any generation command, `text_generation.active_provider` must point to the user's intended real provider such as `openai_text` or `google_text`, and `image_generation.active_provider` must point to the intended image provider such as `openai_image` or `google_image`.
 - For a natural-language request such as `制作一个关于恐龙的儿童绘本`, call `run-topic` directly, or create a JSON payload and call `run`. The text and image content must come from the configured providers and prompt templates.
 - Before claiming a task succeeded, verify the CLI emitted `outline_complete`, `content_complete` unless `--skip-content` was explicitly requested, `generation_window`, and `finish` with `success: true`.
+- Treat `cli_exit` as the final process-level event. After `finish`, the CLI emits `cli_exit`, flushes output, and forcefully terminates the process by default so OpenClaw does not keep waiting on SDK background threads.
 - Do not reuse an existing task directory unless the user explicitly asks to continue or inspect that task. New stories require a unique `task_id`.
 - If the CLI exits non-zero, stop and report the emitted JSON error or `task_error.json`. Do not fill missing content from old outputs, model memory, or hand-written fallback text.
 - If a task directory contains only `.task.lock` or no `task_state.json`, run `diagnose-task` and then `cleanup-lock` only when the lock pid is not alive, or when the user explicitly confirms `--force`.
 - Do not enable parent-process watchdog in OpenClaw. The CLI disables it by default because OpenClaw can re-parent long-running tasks; only use `--watch-parent` or `PICTURE_BOOK_WATCH_PARENT=1` outside OpenClaw when parent PID tracking is reliable.
+- Do not pass `--no-force-exit` in OpenClaw. It is only for local debugging when you want normal Python shutdown behavior.
 - Do not run this workflow with a short external process timeout. Use at least `page_count * page_timeout_seconds + 600` seconds, or leave the command running until the CLI emits `finish`.
 - If only some pages are missing, use `generate-images --only-missing` against that task's `task_state.json`; do not rerun the full task or regenerate completed images.
 

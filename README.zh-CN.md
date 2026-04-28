@@ -182,6 +182,8 @@ scan_interval_seconds: 60
 
 父进程 watchdog 默认关闭，因为 OpenClaw 可能会重挂载或分离长时间运行的命令，导致父进程检测误杀任务。在 OpenClaw 中不要启用它。只有在普通 shell 且父 PID 检测可靠时，才使用 `--watch-parent` 或 `PICTURE_BOOK_WATCH_PARENT=1` 显式开启。
 
+输出 `finish` 后，CLI 会继续输出 `cli_exit`，刷新 stdout/stderr，并默认强制退出 Python 进程。这样可以避免 provider SDK 遗留后台线程导致 OpenClaw 继续等待。`--no-force-exit` 只用于本地调试，不要在 OpenClaw 中使用。
+
 ## 准备输入
 
 创建 `payload.json`：
@@ -231,6 +233,7 @@ python scripts/image_workflow_cli.py run-topic --topic "制作一个关于恐龙
 - `scan`
 - `timeout`
 - `finish`
+- `cli_exit`
 
 如果命令返回非 0，必须直接报告 JSON 错误或 `tasks/<task_id>/task_error.json`，不能用旧图片、旧 `task_state.json` 或手写文本伪装成成功结果。
 

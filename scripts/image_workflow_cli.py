@@ -10,6 +10,7 @@ import json
 import os
 import re
 import signal
+import sys
 import threading
 import time
 import uuid
@@ -37,6 +38,7 @@ DEFAULT_CONFIG_PATH = SKILL_ROOT / "workflow_config.yaml"
 STATE_FILENAME = "task_state.json"
 LOCK_FILENAME = ".task.lock"
 CANCEL_REQUESTED = threading.Event()
+FORCE_EXIT_AFTER_MAIN = True
 
 
 def process_exists(pid: int) -> bool:
@@ -83,6 +85,21 @@ def parent_watchdog_enabled(args: argparse.Namespace) -> bool:
         return True
     value = os.environ.get("PICTURE_BOOK_WATCH_PARENT", "").strip().lower()
     return value in {"1", "true", "yes", "on"}
+
+
+def force_exit_enabled(args: argparse.Namespace) -> bool:
+    if getattr(args, "no_force_exit", False):
+        return False
+    value = os.environ.get("PICTURE_BOOK_NO_FORCE_EXIT", "").strip().lower()
+    return value not in {"1", "true", "yes", "on"}
+
+
+def exit_process(code: int, force: bool) -> None:
+    sys.stdout.flush()
+    sys.stderr.flush()
+    if force:
+        os._exit(code)
+    raise SystemExit(code)
 
 
 def json_print(data: Any, compact: bool = False) -> None:
@@ -1119,6 +1136,7 @@ class WorkflowEngine:
 
         if not pages:
             state, progress = self._scan_generation_progress(task_id, state, target_indices)
+            self.store.save_run_status(task_id, "finished", {"success": True, "status": "complete"})
             yield {
                 "event": "finish",
                 "data": {
@@ -1249,12 +1267,15 @@ class WorkflowEngine:
 
         state, progress = self._scan_generation_progress(task_id, state, target_indices)
         timed_out = bool(progress["missing_indices"]) and time.monotonic() >= deadline_monotonic
+        finish_success = not progress["missing_indices"] and not progress["failed_indices"]
+        finish_status = "timeout" if timed_out else ("complete" if finish_success else "partial")
+        self.store.save_run_status(task_id, "finished", {"success": finish_success, "status": finish_status})
         yield {
             "event": "finish",
             "data": {
-                "success": not progress["missing_indices"] and not progress["failed_indices"],
+                "success": finish_success,
                 "task_id": task_id,
-                "status": "timeout" if timed_out else ("complete" if not progress["missing_indices"] and not progress["failed_indices"] else "partial"),
+                "status": finish_status,
                 **progress,
                 "generated": state["generated"],
                 "failed": state["failed"],
@@ -1530,6 +1551,7 @@ def command_generate_images(args: argparse.Namespace) -> int:
             json_print(event, compact=args.compact)
             if event["event"] == "finish":
                 success = bool(event["data"]["success"])
+    json_print({"event": "cli_exit", "success": success, "task_id": task_id, "exit_code": 0 if success else 1}, compact=args.compact)
     return 0 if success else 1
 
 
@@ -1568,6 +1590,7 @@ def command_run(args: argparse.Namespace) -> int:
                 compact=args.compact,
             )
         raise
+    json_print({"event": "cli_exit", "success": success, "task_id": task_id, "exit_code": 0 if success else 1}, compact=args.compact)
     return 0 if success else 1
 
 
@@ -1603,6 +1626,7 @@ def command_run_topic(args: argparse.Namespace) -> int:
                 compact=args.compact,
             )
         raise
+    json_print({"event": "cli_exit", "success": success, "task_id": task_id, "exit_code": 0 if success else 1}, compact=args.compact)
     return 0 if success else 1
 
 
@@ -1677,6 +1701,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--watch-parent",
         action="store_true",
         help="Exit when the parent process exits. Disabled by default because OpenClaw can re-parent long-running tasks.",
+    )
+    parser.add_argument(
+        "--no-force-exit",
+        action="store_true",
+        help="Do not forcefully terminate the Python process after the CLI command returns.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -1780,9 +1809,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    global FORCE_EXIT_AFTER_MAIN
     install_shutdown_handlers()
     parser = build_parser()
     args = parser.parse_args()
+    FORCE_EXIT_AFTER_MAIN = force_exit_enabled(args)
     if parent_watchdog_enabled(args):
         start_parent_watchdog()
     try:
@@ -1793,4 +1824,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    exit_process(main(), force=FORCE_EXIT_AFTER_MAIN)
