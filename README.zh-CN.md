@@ -4,7 +4,7 @@
 
 这是一个可独立安装到 OpenClaw/Codex 的儿童绘本生成 skill。它可以从用户输入的主题开始，完成绘本大纲生成、页面解析、标题和简介文案生成、封面优先生图、多页图片落盘、任务状态持久化、超时控制、目录扫描和缺页续跑。
 
-
+这个 skill 不依赖 RedInk 原应用代码。
 
 ## 能做什么
 
@@ -51,7 +51,15 @@ independent-image-generation/
     └── image_workflow_cli.py
 ```
 
+不要上传这些本地运行文件：
 
+- `workflow_config.yaml`
+- `tasks/`
+- `.codex_*.json`
+- `.codex_*.yaml`
+- `.retry_pages_*/`
+
+这些文件已经被 `.gitignore` 忽略。
 
 ## 使用 OpenClaw 安装
 
@@ -100,6 +108,8 @@ make a 12-page bedtime storybook about the moon
 
 如果用户只给主题，没有指定页数或风格，skill 会让提示词根据故事复杂度和内容自动选择适合的页数和儿童绘本风格。
 
+OpenClaw 调用时仍然必须执行本 skill 自带的 CLI，不能手写故事、手写 `storybook.md`、复用旧任务结果或绕过 API 作为兜底。一次成功运行必须看到 `outline_complete`、`content_complete`、`generation_window`，以及 `finish` 里的 `success: true`。
+
 ## 安装 Python 依赖
 
 在 skill 根目录执行：
@@ -130,6 +140,7 @@ python scripts/image_workflow_cli.py init-config --output .\workflow_config.yaml
 
 然后编辑 `workflow_config.yaml`，填入你的文本模型和图片模型 key。
 
+不要把 `workflow_config.yaml` 提交到 GitHub。
 
 图片生成的重要配置：
 
@@ -175,6 +186,13 @@ $env:PYTHONUTF8='1'
 python scripts/image_workflow_cli.py run --config .\workflow_config.yaml --input .\payload.json --compact
 ```
 
+OpenClaw 根据自然语言调用时，推荐直接使用 `run-topic`，不需要先手写 payload：
+
+```powershell
+$env:PYTHONUTF8='1'
+python scripts/image_workflow_cli.py run-topic --config .\workflow_config.yaml --topic "制作一个关于恐龙的儿童绘本" --page-count 12 --task-id dinosaur-picture-book-12p --compact
+```
+
 命令会输出 JSON lines。主要事件包括：
 
 - `outline_complete`
@@ -185,6 +203,8 @@ python scripts/image_workflow_cli.py run --config .\workflow_config.yaml --input
 - `scan`
 - `timeout`
 - `finish`
+
+如果命令返回非 0，必须直接报告 JSON 错误或 `tasks/<task_id>/task_error.json`，不能用旧图片、旧 `task_state.json` 或手写文本伪装成成功结果。
 
 `generation_window` 表示本次图片阶段的额度控制窗口：
 

@@ -11,6 +11,15 @@ Use this skill when the full workflow must be fully self-contained. The skill ow
 
 Run [scripts/image_workflow_cli.py](./scripts/image_workflow_cli.py) to initialize config, generate picture-book outlines, generate titles and parent-facing copy, generate images, retry pages, regenerate pages, or inspect task output.
 
+## Mandatory Execution Contract
+
+- Always execute the bundled CLI for picture-book generation. Do not write the story, prompts, `storybook.md`, image descriptions, or final package manually as a substitute for the CLI.
+- For a natural-language request such as `制作一个关于恐龙的儿童绘本`, call `run-topic` directly, or create a JSON payload and call `run`. The text and image content must come from the configured providers and prompt templates.
+- Before claiming a task succeeded, verify the CLI emitted `outline_complete`, `content_complete` unless `--skip-content` was explicitly requested, `generation_window`, and `finish` with `success: true`.
+- Do not reuse an existing task directory unless the user explicitly asks to continue or inspect that task. New stories require a unique `task_id`.
+- If the CLI exits non-zero, stop and report the emitted JSON error or `task_error.json`. Do not fill missing content from old outputs, model memory, or hand-written fallback text.
+- If only some pages are missing, use `generate-images --only-missing` against that task's `task_state.json`; do not rerun the full task or regenerate completed images.
+
 ## Quick Start
 
 1. Create a workflow config file.
@@ -67,6 +76,7 @@ python skills/independent-image-generation/scripts/image_workflow_cli.py generat
 python skills/independent-image-generation/scripts/image_workflow_cli.py generate-images --config .\workflow_config.yaml --input .\pages_payload.json
 python skills/independent-image-generation/scripts/image_workflow_cli.py generate-images --config .\workflow_config.yaml --input .\tasks\task_demo\task_state.json --only-missing
 python skills/independent-image-generation/scripts/image_workflow_cli.py run --config .\workflow_config.yaml --input .\payload.json
+python skills/independent-image-generation/scripts/image_workflow_cli.py run-topic --config .\workflow_config.yaml --topic "制作一个关于恐龙的儿童绘本" --page-count 12 --task-id dinosaur-picture-book-12p
 python skills/independent-image-generation/scripts/image_workflow_cli.py retry --config .\workflow_config.yaml --task-id task_demo --page .\page-1.json
 python skills/independent-image-generation/scripts/image_workflow_cli.py regenerate --config .\workflow_config.yaml --task-id task_demo --page .\page-1.json
 python skills/independent-image-generation/scripts/image_workflow_cli.py task-state --task-id task_demo --config .\workflow_config.yaml

@@ -4,7 +4,7 @@
 
 Standalone OpenClaw/Codex skill for generating children-picture-book image workflows from a user topic. It includes text prompt generation, outline parsing, story packaging text, cover-first image generation, task state persistence, timeout control, directory scanning, and missing-page continuation.
 
-
+This skill does not depend on RedInk application code.
 
 ## What It Does
 
@@ -50,6 +50,15 @@ independent-image-generation/
     └── image_workflow_cli.py
 ```
 
+Do not upload local runtime files:
+
+- `workflow_config.yaml`
+- `tasks/`
+- `.codex_*.json`
+- `.codex_*.yaml`
+- `.retry_pages_*/`
+
+These are ignored by `.gitignore`.
 
 ## Install With OpenClaw
 
@@ -91,6 +100,8 @@ make a 12-page bedtime storybook about the moon
 ```
 
 When the request includes a topic but does not specify page count or style, the skill lets the outline prompt decide a suitable story length and illustration style.
+
+OpenClaw agents must still execute the bundled CLI. They should not hand-write the story or reuse old task output as a fallback. A successful run must include `outline_complete`, `content_complete`, `generation_window`, and `finish` with `success: true`.
 
 ## Install Python Dependencies
 
@@ -168,6 +179,13 @@ $env:PYTHONUTF8='1'
 python scripts/image_workflow_cli.py run --config .\workflow_config.yaml --input .\payload.json --compact
 ```
 
+For OpenClaw natural-language use, the simpler direct command is:
+
+```powershell
+$env:PYTHONUTF8='1'
+python scripts/image_workflow_cli.py run-topic --config .\workflow_config.yaml --topic "制作一个关于恐龙的儿童绘本" --page-count 12 --task-id dinosaur-picture-book-12p --compact
+```
+
 Output is JSON lines. Important events:
 
 - `outline_complete`
@@ -178,6 +196,8 @@ Output is JSON lines. Important events:
 - `scan`
 - `timeout`
 - `finish`
+
+If the command exits non-zero, use the JSON error output or `tasks/<task_id>/task_error.json` as the final failure report. Do not package old files or manually written text as a substitute for a failed workflow.
 
 The `generation_window` event shows the cost-control window:
 

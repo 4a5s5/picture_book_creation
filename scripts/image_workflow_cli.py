@@ -589,11 +589,27 @@ class TaskStore:
             )
             temp_path.replace(state_path)
 
+    def save_error(self, task_id: str, error: str, stage: str, extra: Optional[dict[str, Any]] = None) -> Path:
+        task_dir = self.task_dir(task_id)
+        task_dir.mkdir(parents=True, exist_ok=True)
+        error_path = task_dir / "task_error.json"
+        payload = {
+            "success": False,
+            "task_id": task_id,
+            "stage": stage,
+            "error": error,
+            "created_at": int(time.time()),
+        }
+        if extra:
+            payload.update(extra)
+        error_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        return error_path
+
     def reset_task_outputs(self, task_id: str) -> None:
         task_dir = self.task_dir(task_id)
         if not task_dir.exists():
             return
-        patterns = ("*.png", "thumb_*.png", STATE_FILENAME)
+        patterns = ("*.png", "thumb_*.png", STATE_FILENAME, "task_error.json")
         for pattern in patterns:
             for path in task_dir.glob(pattern):
                 if path.is_file():
@@ -1371,17 +1387,64 @@ def command_run(args: argparse.Namespace) -> int:
     page_count = normalize_page_count(payload.get("page_count"))
     style = normalize_requested_style(payload.get("style"))
     success = False
-    for event in workflow.run(
-        topic=topic,
-        task_id=payload.get("task_id"),
-        user_images=user_images or None,
-        page_count=page_count,
-        style=style,
-        skip_content=args.skip_content,
-    ):
-        json_print(event, compact=args.compact)
-        if event["event"] == "finish":
-            success = bool(event["data"]["success"])
+    task_id = payload.get("task_id") or f"task_{uuid.uuid4().hex[:8]}"
+    try:
+        for event in workflow.run(
+            topic=topic,
+            task_id=task_id,
+            user_images=user_images or None,
+            page_count=page_count,
+            style=style,
+            skip_content=args.skip_content,
+        ):
+            json_print(event, compact=args.compact)
+            if event["event"] == "outline_complete":
+                task_id = event["data"]["task_id"]
+            if event["event"] == "finish":
+                success = bool(event["data"]["success"])
+    except Exception as exc:
+        if task_id:
+            error_path = workflow.store.save_error(task_id, str(exc), "run")
+            json_print(
+                {"success": False, "event": "fatal", "task_id": task_id, "error": str(exc), "error_file": str(error_path)},
+                compact=args.compact,
+            )
+        raise
+    return 0 if success else 1
+
+
+def command_run_topic(args: argparse.Namespace) -> int:
+    workflow = workflow_from_config(Path(args.config), args.provider)
+    topic = read_text_or_value(args.topic)
+    if not topic:
+        raise ValueError("--topic is required.")
+    user_images = [Path(item).read_bytes() for item in args.user_image]
+    page_count = normalize_page_count(args.page_count)
+    style = normalize_requested_style(args.style)
+    success = False
+    task_id = args.task_id or f"task_{uuid.uuid4().hex[:8]}"
+    try:
+        for event in workflow.run(
+            topic=topic,
+            task_id=task_id,
+            user_images=user_images or None,
+            page_count=page_count,
+            style=style,
+            skip_content=args.skip_content,
+        ):
+            json_print(event, compact=args.compact)
+            if event["event"] == "outline_complete":
+                task_id = event["data"]["task_id"]
+            if event["event"] == "finish":
+                success = bool(event["data"]["success"])
+    except Exception as exc:
+        if task_id:
+            error_path = workflow.store.save_error(task_id, str(exc), "run-topic")
+            json_print(
+                {"success": False, "event": "fatal", "task_id": task_id, "error": str(exc), "error_file": str(error_path)},
+                compact=args.compact,
+            )
+        raise
     return 0 if success else 1
 
 
@@ -1469,6 +1532,18 @@ def build_parser() -> argparse.ArgumentParser:
     run_cmd.add_argument("--skip-content", action="store_true")
     run_cmd.add_argument("--compact", action="store_true")
     run_cmd.set_defaults(func=command_run)
+
+    run_topic_cmd = subparsers.add_parser("run-topic", help="Run the full workflow directly from a natural-language topic.")
+    run_topic_cmd.add_argument("--config", required=True)
+    run_topic_cmd.add_argument("--topic", required=True, help="Natural-language picture-book request or a path to a text file.")
+    run_topic_cmd.add_argument("--task-id")
+    run_topic_cmd.add_argument("--page-count")
+    run_topic_cmd.add_argument("--style")
+    run_topic_cmd.add_argument("--user-image", action="append", default=[])
+    run_topic_cmd.add_argument("--provider")
+    run_topic_cmd.add_argument("--skip-content", action="store_true")
+    run_topic_cmd.add_argument("--compact", action="store_true")
+    run_topic_cmd.set_defaults(func=command_run_topic)
 
     retry_cmd = subparsers.add_parser("retry", help="Retry a single page.")
     retry_cmd.add_argument("--config", required=True)
