@@ -128,10 +128,16 @@ python -m pip install google-genai
 Generate a local config file:
 
 ```powershell
-python scripts/image_workflow_cli.py init-config --output .\workflow_config.yaml
+python scripts/image_workflow_cli.py init-config
 ```
 
-Edit `workflow_config.yaml` and fill in your provider keys.
+This always creates the default config at the skill root:
+
+```text
+skills/independent-image-generation/workflow_config.yaml
+```
+
+Edit that file and fill in your provider keys. OpenClaw runtime commands should read this fixed file and should not create `picture-book-runs/workflow_config.yaml`.
 
 Do not commit `workflow_config.yaml` to GitHub.
 
@@ -139,6 +145,7 @@ Important image settings:
 
 ```yaml
 task_lock_stale_seconds: 300
+allow_demo_providers: false
 short_prompt: false
 high_concurrency: false
 max_workers: 1
@@ -177,14 +184,14 @@ From the skill root:
 
 ```powershell
 $env:PYTHONUTF8='1'
-python scripts/image_workflow_cli.py run --config .\workflow_config.yaml --input .\payload.json --compact
+python scripts/image_workflow_cli.py run --input .\payload.json --compact
 ```
 
 For OpenClaw natural-language use, the simpler direct command is:
 
 ```powershell
 $env:PYTHONUTF8='1'
-python scripts/image_workflow_cli.py run-topic --config .\workflow_config.yaml --topic "制作一个关于恐龙的儿童绘本" --page-count 12 --task-id dinosaur-picture-book-12p --compact
+python scripts/image_workflow_cli.py run-topic --topic "制作一个关于恐龙的儿童绘本" --page-count 12 --task-id dinosaur-picture-book-12p --compact
 ```
 
 Output is JSON lines. Important events:
@@ -218,7 +225,7 @@ The `generation_window` event shows the cost-control window:
 If generation times out or only some files are missing, continue with:
 
 ```powershell
-python scripts/image_workflow_cli.py generate-images --config .\workflow_config.yaml --input .\tasks\<task_id>\task_state.json --only-missing --compact
+python scripts/image_workflow_cli.py generate-images --input .\tasks\<task_id>\task_state.json --only-missing --compact
 ```
 
 This mode:
@@ -241,7 +248,7 @@ total_timeout_seconds = 240
 ## Inspect Task State
 
 ```powershell
-python scripts/image_workflow_cli.py task-state --task-id bear-emotion-picture-book-16p --config .\workflow_config.yaml --compact
+python scripts/image_workflow_cli.py task-state --task-id bear-emotion-picture-book-16p --compact
 ```
 
 Look for:
@@ -255,13 +262,13 @@ Look for:
 If a failed run leaves only `.task.lock`, inspect it with:
 
 ```powershell
-python scripts/image_workflow_cli.py diagnose-task --task-id <task_id> --config .\workflow_config.yaml --compact
+python scripts/image_workflow_cli.py diagnose-task --task-id <task_id> --compact
 ```
 
 Remove a stale lock only when `lock_pid_alive` is `false`:
 
 ```powershell
-python scripts/image_workflow_cli.py cleanup-lock --task-id <task_id> --config .\workflow_config.yaml --compact
+python scripts/image_workflow_cli.py cleanup-lock --task-id <task_id> --compact
 ```
 
 ## Manual Single-Page Retry
@@ -269,7 +276,7 @@ python scripts/image_workflow_cli.py cleanup-lock --task-id <task_id> --config .
 There is no automatic retry. If you intentionally want to retry one page, prepare a page JSON file and run:
 
 ```powershell
-python scripts/image_workflow_cli.py retry --config .\workflow_config.yaml --task-id <task_id> --page .\page-2.json --compact
+python scripts/image_workflow_cli.py retry --task-id <task_id> --page .\page-2.json --compact
 ```
 
 This is a manual action and will send a new image request for that page.
@@ -310,7 +317,7 @@ $env:PYTHONUTF8='1'
 If a task appears stuck:
 
 ```powershell
-python scripts/image_workflow_cli.py task-state --task-id <task_id> --config .\workflow_config.yaml --compact
+python scripts/image_workflow_cli.py task-state --task-id <task_id> --compact
 ```
 
 Then continue missing pages with `--only-missing`.

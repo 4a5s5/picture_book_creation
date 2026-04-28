@@ -33,6 +33,7 @@ except Exception:  # pragma: no cover
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 REFERENCES_DIR = SKILL_ROOT / "references"
 DEFAULT_OUTPUT_ROOT = SKILL_ROOT / "tasks"
+DEFAULT_CONFIG_PATH = SKILL_ROOT / "workflow_config.yaml"
 STATE_FILENAME = "task_state.json"
 LOCK_FILENAME = ".task.lock"
 CANCEL_REQUESTED = threading.Event()
@@ -151,6 +152,51 @@ def load_yaml_config(config_path: Path) -> dict[str, Any]:
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
     return yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+
+
+def resolve_config_path(config_value: Optional[str]) -> Path:
+    if config_value:
+        path = Path(config_value)
+        if not path.is_absolute():
+            path = (Path.cwd() / path).resolve()
+        if path.exists():
+            return path
+        raise FileNotFoundError(f"Config file not found: {path}")
+    if DEFAULT_CONFIG_PATH.exists():
+        return DEFAULT_CONFIG_PATH
+    raise FileNotFoundError(
+        "No existing workflow_config.yaml found. Do not run init-config during generation. "
+        f"Create or provide the configured file at the fixed default path: {DEFAULT_CONFIG_PATH}"
+    )
+
+
+def is_demo_provider(name: Optional[str], config: dict[str, Any]) -> bool:
+    return str(name or "").startswith("demo_") or config.get("type") in {"mock", "mock_text"}
+
+
+def assert_generation_config_ready(raw: dict[str, Any], config_path: Path) -> None:
+    if bool(raw.get("allow_demo_providers", False)):
+        return
+    text_generation = raw.get("text_generation", {})
+    image_generation = raw.get("image_generation", {})
+    text_name = text_generation.get("active_provider")
+    image_name = image_generation.get("active_provider")
+    text_cfg = text_generation.get("providers", {}).get(text_name, {})
+    image_cfg = image_generation.get("providers", {}).get(image_name, {})
+    demo_fields = []
+    if is_demo_provider(text_name, text_cfg):
+        demo_fields.append("text_generation.active_provider")
+    if is_demo_provider(image_name, image_cfg):
+        demo_fields.append("image_generation.active_provider")
+    if not demo_fields:
+        return
+    raise RuntimeError(
+        "Config still uses demo providers and cannot run generation. "
+        f"Config: {config_path}. "
+        f"Change {', '.join(demo_fields)} to real providers such as openai_text/google_text and openai_image/google_image, "
+        "then fill their api_key/base_url/model fields. "
+        "Set allow_demo_providers: true only for local mock tests."
+    )
 
 
 def mask_secret(secret: Optional[str]) -> Optional[str]:
@@ -1329,8 +1375,10 @@ class WorkflowEngine:
                 yield event
 
 
-def workflow_from_config(config_path: Path, provider_override: Optional[str]) -> WorkflowEngine:
+def workflow_from_config(config_path: Path, provider_override: Optional[str], allow_demo: bool = False) -> WorkflowEngine:
     raw = load_yaml_config(config_path)
+    if not allow_demo:
+        assert_generation_config_ready(raw, config_path)
     text_generation = raw.get("text_generation", {})
     image_generation = raw.get("image_generation", {})
     text_provider_name = text_generation.get("active_provider")
@@ -1363,7 +1411,9 @@ def workflow_from_config(config_path: Path, provider_override: Optional[str]) ->
 
 
 def command_init_config(args: argparse.Namespace) -> int:
-    target = Path(args.output)
+    target = Path(args.output) if args.output else DEFAULT_CONFIG_PATH
+    if not target.is_absolute():
+        target = (Path.cwd() / target).resolve()
     if target.exists() and not args.force:
         raise FileExistsError(f"File already exists: {target}")
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -1373,7 +1423,8 @@ def command_init_config(args: argparse.Namespace) -> int:
 
 
 def command_config(args: argparse.Namespace) -> int:
-    raw = load_yaml_config(Path(args.config))
+    config_path = resolve_config_path(args.config)
+    raw = load_yaml_config(config_path)
     text_name = raw.get("text_generation", {}).get("active_provider")
     image_name = args.provider or raw.get("image_generation", {}).get("active_provider")
     text_cfg = dict(raw.get("text_generation", {}).get("providers", {}).get(text_name, {}))
@@ -1384,10 +1435,21 @@ def command_config(args: argparse.Namespace) -> int:
         image_cfg["api_key"] = mask_secret(str(image_cfg["api_key"]))
     result = {
         "success": True,
+        "ready_for_generation": not any(
+            (
+                is_demo_provider(text_name, text_cfg),
+                is_demo_provider(image_name, image_cfg),
+            )
+        )
+        or bool(raw.get("allow_demo_providers", False)),
+        "allow_demo_providers": bool(raw.get("allow_demo_providers", False)),
+        "config_path": str(config_path.resolve()),
         "output_root": raw.get("output_root", "./tasks"),
         "text_active_provider": text_name,
         "image_active_provider": raw.get("image_generation", {}).get("active_provider"),
         "selected_image_provider": image_name,
+        "uses_demo_text_provider": is_demo_provider(text_name, text_cfg),
+        "uses_demo_image_provider": is_demo_provider(image_name, image_cfg),
         "text_provider_config": text_cfg,
         "image_provider_config": image_cfg,
     }
@@ -1396,7 +1458,7 @@ def command_config(args: argparse.Namespace) -> int:
 
 
 def command_generate_outline(args: argparse.Namespace) -> int:
-    workflow = workflow_from_config(Path(args.config), args.provider)
+    workflow = workflow_from_config(resolve_config_path(args.config), args.provider)
     payload = read_json_source(args.input)
     if not isinstance(payload, dict):
         raise ValueError("Outline input must be a JSON object.")
@@ -1412,7 +1474,7 @@ def command_generate_outline(args: argparse.Namespace) -> int:
 
 
 def command_generate_content(args: argparse.Namespace) -> int:
-    workflow = workflow_from_config(Path(args.config), args.provider)
+    workflow = workflow_from_config(resolve_config_path(args.config), args.provider)
     payload = read_json_source(args.input)
     if not isinstance(payload, dict):
         raise ValueError("Content input must be a JSON object.")
@@ -1427,7 +1489,7 @@ def command_generate_content(args: argparse.Namespace) -> int:
 
 
 def command_generate_images(args: argparse.Namespace) -> int:
-    workflow = workflow_from_config(Path(args.config), args.provider)
+    workflow = workflow_from_config(resolve_config_path(args.config), args.provider)
     payload = read_json_source(args.input)
     if not isinstance(payload, dict):
         raise ValueError("Image input must be a JSON object.")
@@ -1465,7 +1527,7 @@ def command_generate_images(args: argparse.Namespace) -> int:
 
 
 def command_run(args: argparse.Namespace) -> int:
-    workflow = workflow_from_config(Path(args.config), args.provider)
+    workflow = workflow_from_config(resolve_config_path(args.config), args.provider)
     payload = read_json_source(args.input)
     if not isinstance(payload, dict):
         raise ValueError("Run input must be a JSON object.")
@@ -1503,7 +1565,7 @@ def command_run(args: argparse.Namespace) -> int:
 
 
 def command_run_topic(args: argparse.Namespace) -> int:
-    workflow = workflow_from_config(Path(args.config), args.provider)
+    workflow = workflow_from_config(resolve_config_path(args.config), args.provider)
     topic = read_text_or_value(args.topic)
     if not topic:
         raise ValueError("--topic is required.")
@@ -1538,7 +1600,7 @@ def command_run_topic(args: argparse.Namespace) -> int:
 
 
 def command_retry(args: argparse.Namespace) -> int:
-    workflow = workflow_from_config(Path(args.config), args.provider)
+    workflow = workflow_from_config(resolve_config_path(args.config), args.provider)
     page = ensure_page(read_json_source(args.page))
     result = workflow.retry_single(args.task_id, page, use_reference=not args.no_reference)
     json_print(result, compact=args.compact)
@@ -1546,7 +1608,7 @@ def command_retry(args: argparse.Namespace) -> int:
 
 
 def command_regenerate(args: argparse.Namespace) -> int:
-    workflow = workflow_from_config(Path(args.config), args.provider)
+    workflow = workflow_from_config(resolve_config_path(args.config), args.provider)
     page = ensure_page(read_json_source(args.page))
     result = workflow.regenerate_single(
         task_id=args.task_id,
@@ -1561,7 +1623,7 @@ def command_regenerate(args: argparse.Namespace) -> int:
 
 def command_task_state(args: argparse.Namespace) -> int:
     if args.config:
-        workflow = workflow_from_config(Path(args.config), args.provider)
+        workflow = workflow_from_config(resolve_config_path(args.config), args.provider)
     else:
         cfg = WorkflowConfig(
             text_provider_name="mock_text",
@@ -1583,7 +1645,7 @@ def command_task_state(args: argparse.Namespace) -> int:
 
 def command_diagnose_task(args: argparse.Namespace) -> int:
     if args.config:
-        workflow = workflow_from_config(Path(args.config), args.provider)
+        workflow = workflow_from_config(resolve_config_path(args.config), args.provider)
         store = workflow.store
     else:
         store = TaskStore(DEFAULT_OUTPUT_ROOT)
@@ -1593,7 +1655,7 @@ def command_diagnose_task(args: argparse.Namespace) -> int:
 
 def command_cleanup_lock(args: argparse.Namespace) -> int:
     if args.config:
-        workflow = workflow_from_config(Path(args.config), args.provider)
+        workflow = workflow_from_config(resolve_config_path(args.config), args.provider)
         store = workflow.store
     else:
         store = TaskStore(DEFAULT_OUTPUT_ROOT)
@@ -1607,33 +1669,33 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     init_config = subparsers.add_parser("init-config", help="Write an example config file.")
-    init_config.add_argument("--output", required=True, help="Target YAML path.")
+    init_config.add_argument("--output", help="Target YAML path. Defaults to the fixed skill-root workflow_config.yaml.")
     init_config.add_argument("--force", action="store_true", help="Overwrite an existing file.")
     init_config.add_argument("--compact", action="store_true")
     init_config.set_defaults(func=command_init_config)
 
     config_cmd = subparsers.add_parser("config", help="Inspect a config file.")
-    config_cmd.add_argument("--config", required=True)
+    config_cmd.add_argument("--config")
     config_cmd.add_argument("--provider")
     config_cmd.add_argument("--compact", action="store_true")
     config_cmd.set_defaults(func=command_config)
 
     outline_cmd = subparsers.add_parser("generate-outline", help="Generate outline pages from a topic.")
-    outline_cmd.add_argument("--config", required=True)
+    outline_cmd.add_argument("--config")
     outline_cmd.add_argument("--input", required=True)
     outline_cmd.add_argument("--provider")
     outline_cmd.add_argument("--compact", action="store_true")
     outline_cmd.set_defaults(func=command_generate_outline)
 
     content_cmd = subparsers.add_parser("generate-content", help="Generate titles, copy, and tags from an outline.")
-    content_cmd.add_argument("--config", required=True)
+    content_cmd.add_argument("--config")
     content_cmd.add_argument("--input", required=True)
     content_cmd.add_argument("--provider")
     content_cmd.add_argument("--compact", action="store_true")
     content_cmd.set_defaults(func=command_generate_content)
 
     image_cmd = subparsers.add_parser("generate-images", help="Generate images from prepared pages.")
-    image_cmd.add_argument("--config", required=True)
+    image_cmd.add_argument("--config")
     image_cmd.add_argument("--input", required=True)
     image_cmd.add_argument("--provider")
     image_cmd.add_argument("--only-missing", action="store_true", help="Generate only pages that do not already exist on disk.")
@@ -1641,7 +1703,7 @@ def build_parser() -> argparse.ArgumentParser:
     image_cmd.set_defaults(func=command_generate_images)
 
     run_cmd = subparsers.add_parser("run", help="Run topic to outline to content to images.")
-    run_cmd.add_argument("--config", required=True)
+    run_cmd.add_argument("--config")
     run_cmd.add_argument("--input", required=True)
     run_cmd.add_argument("--provider")
     run_cmd.add_argument("--skip-content", action="store_true")
@@ -1649,7 +1711,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_cmd.set_defaults(func=command_run)
 
     run_topic_cmd = subparsers.add_parser("run-topic", help="Run the full workflow directly from a natural-language topic.")
-    run_topic_cmd.add_argument("--config", required=True)
+    run_topic_cmd.add_argument("--config")
     run_topic_cmd.add_argument("--topic", required=True, help="Natural-language picture-book request or a path to a text file.")
     run_topic_cmd.add_argument("--task-id")
     run_topic_cmd.add_argument("--page-count")
@@ -1661,7 +1723,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_topic_cmd.set_defaults(func=command_run_topic)
 
     retry_cmd = subparsers.add_parser("retry", help="Retry a single page.")
-    retry_cmd.add_argument("--config", required=True)
+    retry_cmd.add_argument("--config")
     retry_cmd.add_argument("--task-id", required=True)
     retry_cmd.add_argument("--page", required=True)
     retry_cmd.add_argument("--provider")
@@ -1670,7 +1732,7 @@ def build_parser() -> argparse.ArgumentParser:
     retry_cmd.set_defaults(func=command_retry)
 
     regenerate_cmd = subparsers.add_parser("regenerate", help="Regenerate a single page.")
-    regenerate_cmd.add_argument("--config", required=True)
+    regenerate_cmd.add_argument("--config")
     regenerate_cmd.add_argument("--task-id", required=True)
     regenerate_cmd.add_argument("--page", required=True)
     regenerate_cmd.add_argument("--provider")

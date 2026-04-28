@@ -135,10 +135,34 @@ python -m pip install google-genai
 在 skill 根目录执行：
 
 ```powershell
-python scripts/image_workflow_cli.py init-config --output .\workflow_config.yaml
+python scripts/image_workflow_cli.py init-config
 ```
 
-然后编辑 `workflow_config.yaml`，填入你的文本模型和图片模型 key。
+这会固定生成配置文件到 skill 根目录：
+
+```text
+skills/independent-image-generation/workflow_config.yaml
+```
+
+然后编辑这个文件，填入你的文本模型和图片模型 key。OpenClaw 运行时应读取这个固定文件，不应再创建或读取 `picture-book-runs/workflow_config.yaml`。
+
+`init-config` 只会生成模板配置，不能直接用于真实生成。真实生成前必须把 demo provider 切换成真实 provider：
+
+```yaml
+text_generation:
+  active_provider: openai_text   # 或 google_text
+
+image_generation:
+  active_provider: openai_image  # 或 google_image
+```
+
+运行前先检查配置：
+
+```powershell
+python scripts/image_workflow_cli.py config --compact
+```
+
+`ready_for_generation` 必须是 `true`。如果是 `false`，说明 OpenClaw 仍然在使用 `demo_text` 或 `demo_image`。
 
 不要把 `workflow_config.yaml` 提交到 GitHub。
 
@@ -146,6 +170,7 @@ python scripts/image_workflow_cli.py init-config --output .\workflow_config.yaml
 
 ```yaml
 task_lock_stale_seconds: 300
+allow_demo_providers: false
 short_prompt: false
 high_concurrency: false
 max_workers: 1
@@ -184,14 +209,14 @@ scan_interval_seconds: 60
 
 ```powershell
 $env:PYTHONUTF8='1'
-python scripts/image_workflow_cli.py run --config .\workflow_config.yaml --input .\payload.json --compact
+python scripts/image_workflow_cli.py run --input .\payload.json --compact
 ```
 
 OpenClaw 根据自然语言调用时，推荐直接使用 `run-topic`，不需要先手写 payload：
 
 ```powershell
 $env:PYTHONUTF8='1'
-python scripts/image_workflow_cli.py run-topic --config .\workflow_config.yaml --topic "制作一个关于恐龙的儿童绘本" --page-count 12 --task-id dinosaur-picture-book-12p --compact
+python scripts/image_workflow_cli.py run-topic --topic "制作一个关于恐龙的儿童绘本" --page-count 12 --task-id dinosaur-picture-book-12p --compact
 ```
 
 命令会输出 JSON lines。主要事件包括：
@@ -227,7 +252,7 @@ python scripts/image_workflow_cli.py run-topic --config .\workflow_config.yaml -
 如果任务超时，或者只有部分图片缺失，使用：
 
 ```powershell
-python scripts/image_workflow_cli.py generate-images --config .\workflow_config.yaml --input .\tasks\<task_id>\task_state.json --only-missing --compact
+python scripts/image_workflow_cli.py generate-images --input .\tasks\<task_id>\task_state.json --only-missing --compact
 ```
 
 这个模式会：
@@ -250,7 +275,7 @@ total_timeout_seconds = 240
 ## 查看任务状态
 
 ```powershell
-python scripts/image_workflow_cli.py task-state --task-id bear-emotion-picture-book-16p --config .\workflow_config.yaml --compact
+python scripts/image_workflow_cli.py task-state --task-id bear-emotion-picture-book-16p --compact
 ```
 
 重点查看：
@@ -264,13 +289,13 @@ python scripts/image_workflow_cli.py task-state --task-id bear-emotion-picture-b
 如果失败后目录里只有 `.task.lock`，先诊断：
 
 ```powershell
-python scripts/image_workflow_cli.py diagnose-task --task-id <task_id> --config .\workflow_config.yaml --compact
+python scripts/image_workflow_cli.py diagnose-task --task-id <task_id> --compact
 ```
 
 只有当 `lock_pid_alive` 为 `false` 时，才清理 stale lock：
 
 ```powershell
-python scripts/image_workflow_cli.py cleanup-lock --task-id <task_id> --config .\workflow_config.yaml --compact
+python scripts/image_workflow_cli.py cleanup-lock --task-id <task_id> --compact
 ```
 
 ## 手动重试单页
@@ -278,7 +303,7 @@ python scripts/image_workflow_cli.py cleanup-lock --task-id <task_id> --config .
 没有自动重试。如果你明确想重试某一页，需要准备该页 JSON 文件，然后执行：
 
 ```powershell
-python scripts/image_workflow_cli.py retry --config .\workflow_config.yaml --task-id <task_id> --page .\page-2.json --compact
+python scripts/image_workflow_cli.py retry --task-id <task_id> --page .\page-2.json --compact
 ```
 
 这是手动操作，会对该页发送一次新的图片请求。
@@ -319,7 +344,7 @@ $env:PYTHONUTF8='1'
 如果任务看起来卡住：
 
 ```powershell
-python scripts/image_workflow_cli.py task-state --task-id <task_id> --config .\workflow_config.yaml --compact
+python scripts/image_workflow_cli.py task-state --task-id <task_id> --compact
 ```
 
 然后使用 `--only-missing` 继续补缺页。
