@@ -145,6 +145,7 @@ python scripts/image_workflow_cli.py init-config --output .\workflow_config.yaml
 图片生成的重要配置：
 
 ```yaml
+task_lock_stale_seconds: 300
 short_prompt: false
 high_concurrency: false
 max_workers: 1
@@ -206,6 +207,8 @@ python scripts/image_workflow_cli.py run-topic --config .\workflow_config.yaml -
 
 如果命令返回非 0，必须直接报告 JSON 错误或 `tasks/<task_id>/task_error.json`，不能用旧图片、旧 `task_state.json` 或手写文本伪装成成功结果。
 
+不要给完整 workflow 设置 5 秒这类很短的外部超时。外部超时至少应为 `page_count * page_timeout_seconds + 600` 秒，或者一直等待到 CLI 输出 `finish`。
+
 `generation_window` 表示本次图片阶段的额度控制窗口：
 
 ```json
@@ -257,6 +260,18 @@ python scripts/image_workflow_cli.py task-state --task-id bear-emotion-picture-b
 - `files`
 - `pages`
 - `task_dir`
+
+如果失败后目录里只有 `.task.lock`，先诊断：
+
+```powershell
+python scripts/image_workflow_cli.py diagnose-task --task-id <task_id> --config .\workflow_config.yaml --compact
+```
+
+只有当 `lock_pid_alive` 为 `false` 时，才清理 stale lock：
+
+```powershell
+python scripts/image_workflow_cli.py cleanup-lock --task-id <task_id> --config .\workflow_config.yaml --compact
+```
 
 ## 手动重试单页
 

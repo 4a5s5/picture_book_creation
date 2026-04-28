@@ -138,6 +138,7 @@ Do not commit `workflow_config.yaml` to GitHub.
 Important image settings:
 
 ```yaml
+task_lock_stale_seconds: 300
 short_prompt: false
 high_concurrency: false
 max_workers: 1
@@ -199,6 +200,8 @@ Output is JSON lines. Important events:
 
 If the command exits non-zero, use the JSON error output or `tasks/<task_id>/task_error.json` as the final failure report. Do not package old files or manually written text as a substitute for a failed workflow.
 
+Do not run the workflow with a 5-second or similarly short external timeout. Use at least `page_count * page_timeout_seconds + 600` seconds, or leave the command running until the CLI emits `finish`.
+
 The `generation_window` event shows the cost-control window:
 
 ```json
@@ -248,6 +251,18 @@ Look for:
 - `files`
 - `pages`
 - `task_dir`
+
+If a failed run leaves only `.task.lock`, inspect it with:
+
+```powershell
+python scripts/image_workflow_cli.py diagnose-task --task-id <task_id> --config .\workflow_config.yaml --compact
+```
+
+Remove a stale lock only when `lock_pid_alive` is `false`:
+
+```powershell
+python scripts/image_workflow_cli.py cleanup-lock --task-id <task_id> --config .\workflow_config.yaml --compact
+```
 
 ## Manual Single-Page Retry
 

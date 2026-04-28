@@ -79,9 +79,9 @@ def start_parent_watchdog() -> None:
 
 def json_print(data: Any, compact: bool = False) -> None:
     if compact:
-        print(json.dumps(data, ensure_ascii=False))
+        print(json.dumps(data, ensure_ascii=False), flush=True)
     else:
-        print(json.dumps(data, ensure_ascii=False, indent=2))
+        print(json.dumps(data, ensure_ascii=False, indent=2), flush=True)
 
 
 def read_json_source(value: str) -> Any:
@@ -542,12 +542,14 @@ class WorkflowConfig:
     image_provider_name: str
     image_provider_config: dict[str, Any]
     output_root: Path
+    task_lock_stale_seconds: int = 300
 
 
 class TaskStore:
-    def __init__(self, output_root: Path):
+    def __init__(self, output_root: Path, lock_stale_seconds: int = 300):
         self.output_root = output_root
         self.output_root.mkdir(parents=True, exist_ok=True)
+        self.lock_stale_seconds = lock_stale_seconds
         self._lock = threading.Lock()
 
     def task_dir(self, task_id: str) -> Path:
@@ -605,11 +607,69 @@ class TaskStore:
         error_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return error_path
 
+    def save_run_status(self, task_id: str, stage: str, extra: Optional[dict[str, Any]] = None) -> Path:
+        task_dir = self.task_dir(task_id)
+        task_dir.mkdir(parents=True, exist_ok=True)
+        status_path = task_dir / "task_run_status.json"
+        payload = {
+            "success": None,
+            "task_id": task_id,
+            "stage": stage,
+            "pid": os.getpid(),
+            "updated_at": int(time.time()),
+        }
+        if extra:
+            payload.update(extra)
+        status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        return status_path
+
+    def diagnose(self, task_id: str) -> dict[str, Any]:
+        task_dir = self.task_dir(task_id)
+        lock = self._read_lock(task_id)
+        pid = int(lock.get("pid") or 0) if lock else 0
+        created_at = int(lock.get("created_at") or 0) if lock else 0
+        age_seconds = int(time.time()) - created_at if created_at else None
+        error_path = task_dir / "task_error.json"
+        status_path = task_dir / "task_run_status.json"
+        state_path = self.state_path(task_id)
+        return {
+            "success": True,
+            "task_id": task_id,
+            "task_dir": str(task_dir),
+            "exists": task_dir.exists(),
+            "has_state": state_path.exists(),
+            "state_path": str(state_path),
+            "has_error": error_path.exists(),
+            "error_path": str(error_path) if error_path.exists() else None,
+            "error": json.loads(error_path.read_text(encoding="utf-8")) if error_path.exists() else None,
+            "has_status": status_path.exists(),
+            "status_path": str(status_path) if status_path.exists() else None,
+            "status": json.loads(status_path.read_text(encoding="utf-8")) if status_path.exists() else None,
+            "has_lock": bool(lock),
+            "lock": lock,
+            "lock_pid_alive": process_exists(pid) if pid else False,
+            "lock_age_seconds": age_seconds,
+            "lock_stale_seconds": self.lock_stale_seconds,
+            "files": sorted(file.name for file in task_dir.glob("*") if file.is_file()) if task_dir.exists() else [],
+        }
+
+    def cleanup_lock(self, task_id: str, force: bool = False) -> dict[str, Any]:
+        lock_path = self.lock_path(task_id)
+        existing = self._read_lock(task_id)
+        if not lock_path.exists():
+            return {"success": True, "task_id": task_id, "removed": False, "reason": "no_lock"}
+        pid = int(existing.get("pid") or 0)
+        alive = process_exists(pid) if pid else False
+        if alive and not force:
+            raise RuntimeError(f"Refusing to remove lock for live pid {pid}. Use --force only if you are certain it is stale.")
+        lock_path.unlink()
+        return {"success": True, "task_id": task_id, "removed": True, "lock": existing, "forced": force}
+
     def reset_task_outputs(self, task_id: str) -> None:
         task_dir = self.task_dir(task_id)
         if not task_dir.exists():
             return
-        patterns = ("*.png", "thumb_*.png", STATE_FILENAME, "task_error.json")
+        patterns = ("*.png", "thumb_*.png", STATE_FILENAME, "task_error.json", "task_run_status.json")
         for pattern in patterns:
             for path in task_dir.glob(pattern):
                 if path.is_file():
@@ -631,7 +691,11 @@ class TaskStore:
             except FileExistsError:
                 existing = self._read_lock(task_id)
                 pid = int(existing.get("pid") or 0)
-                if pid and not process_exists(pid):
+                created_at = int(existing.get("created_at") or 0)
+                lock_age = int(time.time()) - created_at if created_at else 0
+                has_dead_pid = bool(pid) and not process_exists(pid)
+                has_unowned_stale_lock = not pid and lock_age >= self.lock_stale_seconds
+                if has_dead_pid or has_unowned_stale_lock:
                     with contextlib.suppress(FileNotFoundError):
                         lock_path.unlink()
                     continue
@@ -659,7 +723,7 @@ class WorkflowEngine:
         self.config = config
         self.text_generator = text_cls(config.text_provider_config)
         self.image_generator = image_cls(config.image_provider_config)
-        self.store = TaskStore(config.output_root)
+        self.store = TaskStore(config.output_root, lock_stale_seconds=config.task_lock_stale_seconds)
 
         self.outline_prompt = (REFERENCES_DIR / "outline-prompt.txt").read_text(encoding="utf-8")
         self.content_prompt = (REFERENCES_DIR / "content-prompt.txt").read_text(encoding="utf-8")
@@ -1210,10 +1274,28 @@ class WorkflowEngine:
     ):
         current_task_id = task_id or f"task_{uuid.uuid4().hex[:8]}"
         with self.store.task_lock(current_task_id):
+            status_path = self.store.save_run_status(
+                current_task_id,
+                "locked",
+                {
+                    "topic": topic,
+                    "page_count": page_count,
+                    "style": style,
+                },
+            )
+            yield {
+                "event": "run_start",
+                "data": {
+                    "task_id": current_task_id,
+                    "status_file": str(status_path),
+                    "pid": os.getpid(),
+                },
+            }
             if self.store.task_exists(current_task_id):
                 raise RuntimeError(
                     f"Task '{current_task_id}' already exists. Use retry/regenerate for single pages or generate-images --only-missing."
                 )
+            self.store.save_run_status(current_task_id, "generating_outline", {"topic": topic})
             outline_result = self.generate_outline(topic, user_images, page_count=page_count, style=style)
             state = self.create_state(
                 task_id=current_task_id,
@@ -1236,11 +1318,13 @@ class WorkflowEngine:
             }
 
             if not skip_content:
+                self.store.save_run_status(current_task_id, "generating_content", {"topic": topic})
                 content_bundle = self.generate_content(topic, outline_result["outline"], style=style)
                 state["content_bundle"] = content_bundle
                 self.store.save_state(current_task_id, state)
                 yield {"event": "content_complete", "data": content_bundle}
 
+            self.store.save_run_status(current_task_id, "generating_images", {"topic": topic})
             for event in self.generate_images(current_task_id, state):
                 yield event
 
@@ -1269,6 +1353,11 @@ def workflow_from_config(config_path: Path, provider_override: Optional[str]) ->
         image_provider_name=image_provider_name,
         image_provider_config=image_providers[image_provider_name],
         output_root=output_root,
+        task_lock_stale_seconds=normalize_positive_int(
+            raw.get("task_lock_stale_seconds"),
+            300,
+            "task_lock_stale_seconds",
+        ),
     )
     return WorkflowEngine(cfg)
 
@@ -1482,7 +1571,33 @@ def command_task_state(args: argparse.Namespace) -> int:
             output_root=DEFAULT_OUTPUT_ROOT,
         )
         workflow = WorkflowEngine(cfg)
-    result = workflow.task_state(args.task_id)
+    try:
+        result = workflow.task_state(args.task_id)
+    except FileNotFoundError:
+        result = workflow.store.diagnose(args.task_id)
+        result["success"] = False
+        result["error"] = result.get("error") or "Task state not found."
+    json_print(result, compact=args.compact)
+    return 0
+
+
+def command_diagnose_task(args: argparse.Namespace) -> int:
+    if args.config:
+        workflow = workflow_from_config(Path(args.config), args.provider)
+        store = workflow.store
+    else:
+        store = TaskStore(DEFAULT_OUTPUT_ROOT)
+    json_print(store.diagnose(args.task_id), compact=args.compact)
+    return 0
+
+
+def command_cleanup_lock(args: argparse.Namespace) -> int:
+    if args.config:
+        workflow = workflow_from_config(Path(args.config), args.provider)
+        store = workflow.store
+    else:
+        store = TaskStore(DEFAULT_OUTPUT_ROOT)
+    result = store.cleanup_lock(args.task_id, force=args.force)
     json_print(result, compact=args.compact)
     return 0
 
@@ -1571,6 +1686,21 @@ def build_parser() -> argparse.ArgumentParser:
     task_state_cmd.add_argument("--provider")
     task_state_cmd.add_argument("--compact", action="store_true")
     task_state_cmd.set_defaults(func=command_task_state)
+
+    diagnose_cmd = subparsers.add_parser("diagnose-task", help="Inspect task directory, lock, status, and error files even when state is missing.")
+    diagnose_cmd.add_argument("--task-id", required=True)
+    diagnose_cmd.add_argument("--config")
+    diagnose_cmd.add_argument("--provider")
+    diagnose_cmd.add_argument("--compact", action="store_true")
+    diagnose_cmd.set_defaults(func=command_diagnose_task)
+
+    cleanup_lock_cmd = subparsers.add_parser("cleanup-lock", help="Remove a stale task lock.")
+    cleanup_lock_cmd.add_argument("--task-id", required=True)
+    cleanup_lock_cmd.add_argument("--config")
+    cleanup_lock_cmd.add_argument("--provider")
+    cleanup_lock_cmd.add_argument("--force", action="store_true", help="Remove the lock even if its pid appears alive.")
+    cleanup_lock_cmd.add_argument("--compact", action="store_true")
+    cleanup_lock_cmd.set_defaults(func=command_cleanup_lock)
 
     return parser
 

@@ -1,4 +1,5 @@
 output_root: ../tasks
+task_lock_stale_seconds: 300
 
 text_generation:
   active_provider: demo_text
