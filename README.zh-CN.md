@@ -83,6 +83,23 @@ independent-image-generation
 
 如果你的 OpenClaw 版本暂不支持直接从 GitHub 安装 skill，可以手动把本目录放到 OpenClaw/Codex 使用的 skills 目录，然后重启或刷新 OpenClaw 的 skill 索引。
 
+## 自然语言触发
+
+安装后，OpenClaw 应该可以通过自然语言请求选择这个 skill，因为 `SKILL.md` 的描述已经明确包含儿童绘本生成场景和中文触发示例。
+
+示例：
+
+```text
+制作一个关于恐龙的儿童绘本
+生成一本小熊情绪管理绘本，16页
+做一个关于小朋友学会分享玩具的儿童绘本
+create a dinosaur picture book for kids
+make a 12-page bedtime storybook about the moon
+继续补齐上次儿童绘本缺失的图片页
+```
+
+如果用户只给主题，没有指定页数或风格，skill 会让提示词根据故事复杂度和内容自动选择适合的页数和儿童绘本风格。
+
 ## 安装 Python 依赖
 
 在 skill 根目录执行：

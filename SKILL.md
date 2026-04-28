@@ -1,6 +1,6 @@
 ---
 name: independent-image-generation
-description: Run a standalone end-to-end children-picture-book workflow with topic-to-outline text generation, page parsing, optional story packaging text generation, cover-first multi-page image generation, local task snapshots, and retry or regenerate operations. Use when Codex needs an independent skill that implements the full process from user topic to final storybook images without relying on any host application code.
+description: Create children picture books from natural-language requests such as "制作一个关于恐龙的儿童绘本", "生成一本小熊情绪管理绘本", "make a dinosaur picture book for kids", or "create a 16-page bedtime storybook". Runs a standalone end-to-end workflow from user topic to outline, page parsing, story packaging text, cover-first image generation, local task snapshots, timeout control, and missing-page continuation. Use whenever Codex/OpenClaw is asked to create, generate, make, continue, retry, or inspect a children's picture book or multi-page illustrated story, without relying on host application code.
 ---
 
 # Independent Picture Book Generation

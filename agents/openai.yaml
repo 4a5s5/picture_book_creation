@@ -1,4 +1,4 @@
 interface:
   display_name: "Independent Picture Book Generation"
-  short_description: "Run standalone children-picture-book image workflows."
-  default_prompt: "Use $independent-image-generation to run or modify a standalone children-picture-book workflow with outline, copy, images, timeout control, and missing-page continuation."
+  short_description: "Create children's picture books from natural language."
+  default_prompt: "Use $independent-image-generation when the user asks in natural language to create a children's picture book, such as 制作一个关于恐龙的儿童绘本, 生成一本小熊情绪管理绘本, or create a 16-page bedtime storybook."

@@ -75,6 +75,23 @@ independent-image-generation
 
 If your OpenClaw version does not support direct GitHub skill installation, manually place this folder in the OpenClaw/Codex skills directory used by your environment, then restart or refresh OpenClaw's skill index.
 
+## Natural-Language Triggering
+
+After installation, OpenClaw should be able to select this skill from natural-language picture-book requests because `SKILL.md` explicitly describes those triggers.
+
+Example prompts:
+
+```text
+制作一个关于恐龙的儿童绘本
+生成一本小熊情绪管理绘本，16页
+做一个关于小朋友学会分享玩具的儿童绘本
+create a dinosaur picture book for kids
+make a 12-page bedtime storybook about the moon
+继续补齐上次儿童绘本缺失的图片页
+```
+
+When the request includes a topic but does not specify page count or style, the skill lets the outline prompt decide a suitable story length and illustration style.
+
 ## Install Python Dependencies
 
 The CLI script needs Python and these core packages:
